@@ -4,128 +4,153 @@
 #include <chrono>
 using namespace std;
 
-#define int long long
+#define int                  long long
+#define endl                 "\n"
+#define pb                   push_back
+#define present(c, e)        (c.find(e) != c.end())
+#define cpresent(c, e)       (find(all(c), e) != c.end())
 
-/* Here is the output of code -- 
-    Total number of transactions read: 5214
-    Number of tx in final block: 3174
-    Total fee in final block : 5696031
-    Total weight of fnal block: 3999936
-    Percentage of weight: 99.99840 %
-    Time taken by program is : 1.53695 sec
-*/
-//created a class for Transactions
+/* 
+1. logic behind how I solved the problem, as it is beign asked that we have to maximise the total fee for the block with
+with constraint that total weight of transactions in a block must not exceed 4000000 weight, so I made a user defined data
+type mempool which will store each row of mempool.csv file.
+2. and added a new int variable ratio which will store the ratio of fee and weight, ans then sorted the mempool vector
+using this ratio in comp function.
+3. then I iterated on the new sorted vector, and if vector[i].weight < max_weight and all the parents id of that vector[i] 
+have been marked in map then i will add this vector[i] to my block vector.
+4. and I also used a queue which will store all the transaction that are in queue because their parents transaction are not
+completed yet, so after each iteration I have checked for each element in the queue that if its parents has been marked
+yet or not, if marked i will remove that element from queue.
+5. then I putted all the my block vector txids in blokc.txt file
+#note - the time-taken by programm in gcc compiler is 3.8096 sec*/
 
-struct Transaction{ 
-    string tx_id;
+struct mempool{
+    string txid;
     vector<string> parent_txids;
     int fee, weight;
-    float ratio;
+    double ratio;
 };
 
 class Solution{
     public :
         void Solve(){
-            unordered_map<string, Transaction *> txn_hash; //unordered map to map txn_ids with transactions
-            read_csv("mempool.csv", txn_hash);
-            set<pair<float, Transaction *>, greater<pair<float, Transaction *>>> block; //it will contain all the transaction sorted in non increasing order of ratio.
-            set<string> done_txnids;
-            vector<string> mempool;
-            double max_weight = 4000000;
-            double totalBlockWeight = 0;
-            int total_fee = 0;
-
-            for(auto txn : txn_hash)
-                block.insert({txn.second->ratio, txn.second});
-            
-            while (!block.empty() && totalBlockWeight < max_weight){
-                bool found = false;
-                for (auto &txn : block){
-                    Transaction *curr_tx = txn.second;
-                    int currFee = curr_tx->fee;
-                    int currWeight = curr_tx->weight;
-                    if (isValid(curr_tx, done_txnids) && ((totalBlockWeight + currWeight) <= max_weight)){
-                        totalBlockWeight += currWeight;
-                        done_txnids.insert(curr_tx->tx_id);
-                        mempool.push_back(curr_tx->tx_id);
-                        total_fee += currFee;
-                        block.erase(txn);
-                        found = true;
-                        break;
+            ifstream ip("mempool.csv");
+            ofstream op("block.txt", ofstream::out);
+            if(!ip.is_open()) cout << "ERROR: file open" << endl;
+            string txid, fee, weight, parent_txids;
+            vector<mempool> transactions;
+            int i = 0;
+            while(ip.good()){
+                mempool next;
+                getline(ip, txid, ',');
+                getline(ip, fee, ',');
+                getline(ip, weight, ',');
+                getline(ip, parent_txids, '\n');
+                next.txid = txid;
+                next.parent_txids = split(parent_txids, ';');
+                next.fee = stoi(fee);
+                next.weight = stoi(weight);
+                next.ratio = (double)next.fee / (double)next.weight;
+                if(i != 0) transactions.pb(next);
+                i += 1;
+            }
+            sort(transactions.begin(), transactions.end(), comp);
+            int max_weight = 4000000, total_fee = 0;
+            vector<string> block;
+            unordered_map<string, int> isDone;
+            isDone[""] = 1;
+            queue<mempool> inQueue;
+            for(int i = 0; i < transactions.size(); i ++){
+                if(transactions[i].weight <= max_weight){
+                    vector<string> parents = transactions[i].parent_txids;
+                    bool isNext = true;
+                    for(auto prnt : parents){
+                        if(isDone.find(prnt) == isDone.end()){
+                            isNext = false;
+                            inQueue.push(transactions[i]);
+                            break;
+                        }
                     }
+                    if(isNext){
+                        max_weight -= transactions[i].weight;
+                        isDone[transactions[i].txid] = 1;
+                        total_fee += transactions[i].fee;
+                        block.push_back(transactions[i].txid);
+                    }
+                    int n = inQueue.size(), i = 0;
+                    while(i < n){
+                        mempool curr = inQueue.front();
+                        inQueue.pop();
+                        vector<string> parents = curr.parent_txids;
+                        bool isNext = true;
+                        for(auto prnt : parents){
+                            if(isDone.find(prnt) == isDone.end()){
+                                isNext = false;
+                                inQueue.push(curr);
+                                break;
+                            }
+                        }
+                        if(isNext){
+                            max_weight -= curr.weight;
+                            isDone[curr.txid] = 1;
+                            total_fee += curr.fee;
+                            block.push_back(curr.txid);
+                            i = 0;
+                            n = inQueue.size();
+                        }else i += 1;
+                    }
+                }else break;
+            }
+            //cout << total_fee << " " << max_weight;
+            if(op.is_open()){
+                for (int i = 0; i < block.size(); i++) {
+                    op << block[i] << "\n";
                 }
-                if(!found)
-                    break;
+                op.close();
+            }else cout << "Problem with file opening";
+        }
+        static bool comp(mempool A, mempool B){
+            return(A.ratio > B.ratio);
+        }
+        static int stoi(string str){
+            int ans = 0;
+            int n = str.length();
+            int i = 0;
+            if(str[0] == '-') i += 1;
+            while(i < n){
+                if(isdigit(str[i])){
+                    ans = ans * 10 + (str[i] - '0');
+                }else return(-1);
+                i += 1;
             }
-
-            cout << fixed << setprecision(5) << endl;
-            cout << "Number of tx in final block " << done_txnids.size() << endl;
-            cout << "Total fee in final block : " << total_fee <<"\n";
-            cout << "Total weight of final block: " << totalBlockWeight << endl;
-            cout<<"Percentage of weight: "<< (double)(totalBlockWeight / max_weight) * 100.0 <<" %"<< endl;
-            writeOutput(mempool, "block.txt");
+            ans *= (str[0] == '-') ? -1 : 1;
+            return(ans);
         }
-
-        pair<string, Transaction*> createTransaction(vector<string> &row){
-            auto next_txn = new Transaction();
-            next_txn->tx_id = row[0];
-            next_txn->fee = stoi(row[1]);
-            next_txn->weight = stoi(row[2]);
-            next_txn->ratio = (float)next_txn->fee / (float)next_txn->weight;
-            vector<string> p;
-            for (int i = 3; i < row.size(); i++)
-                p.push_back(row[i]);
-            next_txn->parent_txids = p;
-            return {row[0], next_txn};
-        }
-
-        void read_csv(string fileName, unordered_map<string, Transaction*> &txn_hash){
-            ifstream fin(fileName);
-            vector<string> row;
-            string temp, line, word;
-            getline(fin, line);
-            while (getline(fin, line)){
-                row.clear();
-                stringstream s(line);
-                while (getline(s, word, ','))
-                    row.push_back(word); 
-                pair<string, Transaction*> p = createTransaction(row);
-                txn_hash[p.first] = p.second;
+        static vector<string> split(const string& str, char delim){
+            auto i = 0;
+            vector<string> list;
+            auto pos = str.find(delim);
+            while(pos != string::npos){
+                list.push_back(str.substr(i, pos - i));
+                i = ++pos;
+                pos = str.find(delim, pos);
             }
-            fin.close();
-            cout << "Total number of transactions read: " << txn_hash.size() << endl;
-        }
-
-        bool isValid(Transaction *tx, set<string> &done_txnids){
-            for (auto parent : tx->parent_txids)
-                if (done_txnids.find(parent) == done_txnids.end())
-                    return false;
-            return true;
-        }
-
-        void writeOutput(vector<string> &mempool, string fn){
-            ofstream myfile(fn);
-            for (auto s : mempool)
-                myfile << s << endl;
-            myfile.close();
+            list.push_back(str.substr(i, str.length()));
+            return list;
         }
 };
 
 signed main(){
     ios_base::sync_with_stdio(0);
     cin.tie(0); cout.tie(0);
-    auto start = chrono::high_resolution_clock::now();
+    //auto start = chrono::high_resolution_clock::now();
     Solution ob;
     ob.Solve();
-    auto end = chrono::high_resolution_clock::now();
-    double time_taken = chrono::duration_cast<chrono::nanoseconds>(end - start).count();
-    time_taken *= 1e-9;
-    cout << "Time taken by program is : " << fixed << time_taken << setprecision(5);
-    cout << " sec";
+    // auto end = chrono::high_resolution_clock::now();
+    // double time_taken = chrono::duration_cast<chrono::nanoseconds>(end - start).count();
+    // time_taken *= 1e-9;
+    // cout << "Time taken by program is : " << fixed << time_taken << setprecision(5);
+    // cout << " sec";
     return 0;
 }
-/* References - 
-    -> https://en.wikipedia.org/wiki/Continuous_knapsack_problem
-    -> https://github.com/mempool/mempool
-    -> https://www.blockchain.com/charts/mempool-size
-*/
+//g++ -o out code.cpp
